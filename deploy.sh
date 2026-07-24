@@ -142,6 +142,10 @@ EOF
 enable_bbr() {
     local available current
 
+    if command -v modprobe >/dev/null 2>&1; then
+        modprobe tcp_bbr 2>/dev/null || true
+    fi
+
     available="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)"
     if [[ "$available" != *bbr* ]]; then
         warn "BBR is not available on this kernel."
