@@ -6,7 +6,6 @@ XRAY_DIR="/etc/xray"
 XRAY_SERVICE="/etc/systemd/system/xray.service"
 XRAY_SERVICE_NAME="xray"
 APT_ARCHIVE_CONF="/etc/apt/apt.conf.d/99archive"
-IPV6_DISABLE_CONF="/etc/sysctl.d/99-disable-ipv6.conf"
 
 DO_APPLY=0
 PURGE_DEPENDENCIES=0
@@ -39,7 +38,6 @@ This removes artifacts created by deploy.sh:
   - /etc/xray
   - /tmp/xray-install.*, /tmp/xray.zip, and common downloaded helper scripts
   - /etc/apt/apt.conf.d/99archive
-  - /etc/sysctl.d/99-disable-ipv6.conf
 EOF
 }
 
@@ -182,14 +180,6 @@ purge_dependencies() {
     run apt-get autoremove -y
 }
 
-restore_ipv6_runtime() {
-    if command -v sysctl >/dev/null 2>&1; then
-        run_best_effort sysctl -w net.ipv6.conf.all.disable_ipv6=0
-        run_best_effort sysctl -w net.ipv6.conf.default.disable_ipv6=0
-        run_best_effort sysctl -w net.ipv6.conf.lo.disable_ipv6=0
-    fi
-}
-
 main() {
     parse_args "$@"
     require_root_when_apply
@@ -204,11 +194,6 @@ main() {
     if [ -f "$APT_ARCHIVE_CONF" ] || [ "$DO_APPLY" -eq 0 ]; then
         run rm -f "$APT_ARCHIVE_CONF"
     fi
-
-    if [ -f "$IPV6_DISABLE_CONF" ] || [ "$DO_APPLY" -eq 0 ]; then
-        run rm -f "$IPV6_DISABLE_CONF"
-    fi
-    restore_ipv6_runtime
     purge_dependencies
 
     if [ "$DO_APPLY" -eq 1 ]; then
