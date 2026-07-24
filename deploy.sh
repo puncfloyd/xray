@@ -15,6 +15,7 @@ XRAY_INFO="${XRAY_DIR}/node.info"
 XRAY_SERVICE="/etc/systemd/system/xray.service"
 DOWNLOAD_DIR="/tmp/xray-install.$$"
 IPV6_DISABLE_CONF="/etc/sysctl.d/99-disable-ipv6.conf"
+BBR_CONF="/etc/sysctl.d/99-bbr.conf"
 
 OS_ID=""
 OS_VERSION_CODENAME=""
@@ -136,6 +137,37 @@ net.ipv6.conf.lo.disable_ipv6 = 1
 EOF
     chmod 644 "$IPV6_DISABLE_CONF"
     sysctl --system >/dev/null 2>&1
+}
+
+enable_bbr() {
+    local available current
+
+    available="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)"
+    if [[ "$available" != *bbr* ]]; then
+        warn "BBR is not available on this kernel."
+        printf 'failed\n'
+        return 0
+    fi
+
+    cat > "$BBR_CONF" <<'EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+    chmod 644 "$BBR_CONF"
+
+    if ! sysctl --system >/dev/null 2>&1; then
+        warn "Failed to apply BBR sysctl settings."
+        printf 'failed\n'
+        return 0
+    fi
+
+    current="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
+    if [ "$current" = "bbr" ]; then
+        printf 'ok\n'
+    else
+        warn "BBR sysctl applied, but current congestion control is: ${current:-unknown}"
+        printf 'failed\n'
+    fi
 }
 
 install_dependencies() {
@@ -384,23 +416,24 @@ print_result() {
     local public_ip="$2"
     local socks_user="$3"
     local socks_pass="$4"
+    local bbr_status="$5"
 
-    printf 'RESULT\n'
     printf 'host: %s\n' "$public_ip"
     printf 'port: %s\n' "$port"
     printf 'user: %s\n' "$socks_user"
     printf 'pass: %s\n' "$socks_pass"
-    printf 'END\n'
+    printf 'bbr: %s\n' "$bbr_status"
 }
 
 main() {
-    local port ip_result public_ip ip_source ip_confidence socks_user socks_pass
+    local port ip_result public_ip ip_source ip_confidence socks_user socks_pass bbr_status
 
     require_root
     validate_settings
     detect_os
     require_systemd
     disable_ipv6
+    bbr_status="$(enable_bbr)"
     apt_update
     install_dependencies
     download_and_install_xray
@@ -418,7 +451,7 @@ main() {
     write_systemd_service
     write_node_info "$port" "$public_ip" "$socks_user" "$socks_pass"
     start_service
-    print_result "$port" "$public_ip" "$socks_user" "$socks_pass"
+    print_result "$port" "$public_ip" "$socks_user" "$socks_pass" "$bbr_status"
 }
 
 main "$@"
