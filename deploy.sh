@@ -23,16 +23,23 @@ OS_VERSION_ID=""
 OS_PRETTY_NAME=""
 
 log() {
-    printf '[INFO] %s\n' "$*" >&2
+    :
 }
 
 warn() {
-    printf '[WARN] %s\n' "$*" >&2
+    :
 }
 
 die() {
     printf '[ERROR] %s\n' "$*" >&2
     exit 1
+}
+
+run_quiet() {
+    local message="$1"
+    shift
+
+    "$@" >/dev/null 2>&1 || die "$message"
 }
 
 cleanup() {
@@ -95,7 +102,7 @@ require_systemd() {
 }
 
 apt_update() {
-    if apt-get update >&2; then
+    if apt-get update >/dev/null 2>&1; then
         return 0
     fi
 
@@ -103,7 +110,8 @@ apt_update() {
         { [ "$OS_VERSION_CODENAME" = "bullseye" ] || [ "$OS_VERSION_ID" = "11" ]; }; then
         warn "apt-get update failed on Debian bullseye; switching to archive.debian.org."
         configure_debian_bullseye_archive_sources
-        apt-get update -o Acquire::Check-Valid-Until=false >&2
+        run_quiet "apt-get update failed after switching to archive.debian.org." \
+            apt-get update -o Acquire::Check-Valid-Until=false
         return 0
     fi
 
@@ -176,12 +184,13 @@ EOF
 
 install_dependencies() {
     log "Installing dependencies"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    run_quiet "Failed to install dependencies." \
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         ca-certificates \
         curl \
         unzip \
         wget \
-        iproute2 >&2
+        iproute2
 }
 
 xray_asset_name() {
@@ -210,11 +219,13 @@ download_and_install_xray() {
     log "Installing Xray ${XRAY_VERSION} (${asset})"
     mkdir -p "$DOWNLOAD_DIR" "$XRAY_DIR"
 
-    wget -q "$url" -O "${DOWNLOAD_DIR}/xray.zip"
-    unzip -o "${DOWNLOAD_DIR}/xray.zip" -d "$XRAY_DIR" >/dev/null
+    run_quiet "Failed to download Xray." \
+        wget -q "$url" -O "${DOWNLOAD_DIR}/xray.zip"
+    run_quiet "Failed to unzip Xray." \
+        unzip -o "${DOWNLOAD_DIR}/xray.zip" -d "$XRAY_DIR"
 
     [ -x "$XRAY_BIN" ] || chmod 755 "$XRAY_BIN"
-    "$XRAY_BIN" version >&2
+    run_quiet "Xray binary is not runnable." "$XRAY_BIN" version
 }
 
 port_is_free() {
@@ -366,7 +377,7 @@ write_xray_config() {
 EOF
 
     chmod 600 "$XRAY_CONFIG"
-    "$XRAY_BIN" run -test -config "$XRAY_CONFIG" >&2
+    run_quiet "Xray config validation failed." "$XRAY_BIN" run -test -config "$XRAY_CONFIG"
 }
 
 write_systemd_service() {
@@ -408,9 +419,9 @@ EOF
 }
 
 start_service() {
-    systemctl daemon-reload >&2
-    systemctl enable xray >&2
-    systemctl restart xray >&2
+    run_quiet "systemctl daemon-reload failed." systemctl daemon-reload
+    run_quiet "systemctl enable xray failed." systemctl enable xray
+    run_quiet "systemctl restart xray failed." systemctl restart xray
     systemctl is-active --quiet xray || die "xray service failed to start. Check: journalctl -u xray --no-pager"
     log "xray service is active"
 }
