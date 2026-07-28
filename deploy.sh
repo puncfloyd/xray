@@ -437,7 +437,9 @@ print_result() {
     printf 'port: %s\n' "$port"
     printf 'user: %s\n' "$socks_user"
     printf 'pass: %s\n' "$socks_pass"
-    printf 'bbr: %s\n' "$bbr_status"
+    if [ "$bbr_status" != "ok" ]; then
+        printf 'bbr: %s\n' "$bbr_status"
+    fi
 }
 
 main() {
